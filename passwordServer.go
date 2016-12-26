@@ -1,10 +1,10 @@
 /*
 * passwordServer
 * 
-* An http server that encrypts passwords with SHA512 via a REST API
+* An http server that asynchronously encrypts passwords with SHA512 via a REST API
 *
 * usage:
-*   passwordServer [-p=<port_number>] [-q=<queue_size>]
+*   passwordServer [-p=<port_number>] [-q=<queue_size>] [-w=<number_of_workers>]
 */
 package main
 
@@ -20,6 +20,7 @@ import (
 	"net"
     "net/http"
     "crypto/sha512"
+    "encoding/base64"
     "strconv"
     "regexp"
 )
@@ -67,7 +68,6 @@ type PasswordHashRequest struct {
 	password string
 	started time.Time
 }
-
 /* worker to process hash requests */
 type PasswordHashWorker struct {
 	id int
@@ -95,17 +95,17 @@ func (w *PasswordHashWorker) start() {
 	        select {
 	        case work := <-w.workQueue:
 		      	// process password hash jobs
-		      	fmt.Println("worker", w.id, " processing password ", work.password)
 		        time.Sleep(5 * time.Second)
 		        // encrypt the password and store in the results
-		        passwordBytes := []byte(work.password)
-		        var hash = sha512.New()
-				w.results.Set(work.jobId, string(hash.Sum(passwordBytes)))
+		        hasher := sha512.New()
+    			hasher.Write([]byte(work.password))
+    			sha := base64.URLEncoding.EncodeToString(hasher.Sum(nil))
+				w.results.Set(work.jobId, sha)
 
 				// calculate the total processing time for this job (includes queue wait time)
 				elapsed := time.Since(work.started)
 				// update the total processing time since server startup
-				atomic.AddUint64(&totalRequestTime, uint64(elapsed))
+				atomic.AddUint64(&totalRequestTime, uint64(elapsed) / uint64(time.Millisecond))
 
 	        case <-w.quitChannel:
 		        // stop the worker
@@ -172,7 +172,7 @@ func createPasswordHash(w http.ResponseWriter, r *http.Request) {
 
 // getStats returns a JSON object including the total hash requests since server start 
 // and the average time of a hash request in milliseconds.  Time of a hash request is 
-// calculated as the elapsed time from the request being added to the work queue to the
+// calculated as the elapsed time from the request being added to the work queue until
 // completion of the request
 func getStats(w http.ResponseWriter, r *http.Request) {
 	if (r.Method != "GET") {
@@ -223,16 +223,6 @@ func route(w http.ResponseWriter, r *http.Request) {
     }
 }
 
-// shutdown blocks until all password hash requests in the work queue have
-// been processed.
-func shutdown() {
-    fmt.Println("waiting for password requests to complete...")
-
-    fmt.Println("shutting down workers...")
-
-
-}
-
 // main starts the service on port 8080, unless the user specifies an alternate port. 
 func main() {
 
@@ -272,9 +262,7 @@ func main() {
 		// close the TCP channel to prevent additional requests
 		l.Close()
 		fmt.Println("waiting for password requests to complete...")
-		var wait_iter = 0
-		for (wait_iter < 1000 && len(PasswordHashWorkQueue) > 0) {
-			wait_iter += 1
+		for (len(PasswordHashWorkQueue) > 0) {
 			time.Sleep(time.Second)
 		}
     	fmt.Println("shutting down workers...")
