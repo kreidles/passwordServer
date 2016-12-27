@@ -34,9 +34,9 @@ $GOPATH/bin/passwordServer [-p=<port>] [-q=<queue_size>] [-w=<num_workers>]
 ```
 
 * Command-line flags are optional and include
-   * -p=<port>, runs the server  on the specified port
-   * -q=<queue_size>, controls the buffer size of the internal work queue
-   * -w=<num_workers>, controls the number of worker threads to process password hash requests
+   * -p=port, runs the server  on the specified port
+   * -q=queue_size, controls the buffer size of the internal work queue
+   * -w=num_workers, controls the number of worker threads to process password hash requests
 
 * Stop the server by hitting Ctrl-C.  The server will wait until any remaining password requests are processed, and then shutdown the worker threads.  No additional requests are accepted during shutdown.
 
